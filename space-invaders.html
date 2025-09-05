@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Space Invaders - Infinite Waves with Additional Power-Ups</title>
+  <style>
+    body {
+      background: #111;
+      margin: 0;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+      background: #222;
+      border: 2px solid #fff;
+    }
+    #info {
+      color: #fff;
+      text-align: center;
+      margin-top: 10px;
+      font-family: Arial, sans-serif;
+    }
+    #restartBtn {
+      display: none;
+      margin: 20px auto 0 auto;
+      padding: 12px 30px;
+      font-size: 18px;
+      background: #0f0;
+      border: none;
+      border-radius: 5px;
+      color: #000;
+      font-family: Arial, sans-serif;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #restartBtn:hover {
+      background: #fff;
+      color: #222;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="900" height="700"></canvas>
+  <div id="info">Arrow keys to move, space to shoot</div>
+  <button id="restartBtn">Restart</button>
+  <script>
+    // Canvas and context
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const WIDTH = canvas.width;
+    const HEIGHT = canvas.height;
+
+    // Player properties (large for visibility)
+    const PLAYER_WIDTH = 70;
+    const PLAYER_HEIGHT = 48;
+    const PLAYER_SPEED = 8;
+
+    // Bullet properties
+    const BULLET_WIDTH = 6;
+    const BULLET_HEIGHT = 16;
+    const BULLET_SPEED = 10;
+
+    // Invader properties (wide landscape arrangement)
+    const INVADER_COLS = 14;
+    const INVADER_WIDTH = 40;
+    const INVADER_HEIGHT = 28;
+    const INVADER_X_SPACING = 54;
+    const INVADER_Y_SPACING = 46;
+    const INVADER_X_OFFSET = 40;
+    const INVADER_Y_OFFSET = 60;
+
+    // Invader movement base
+    const INVADER_SPEED_BASE = 1.2;
+    const INVADER_DROP_BASE = 20;
+
+    // Invader bullet
+    const ENEMY_BULLET_SPEED_BASE = 4;
+    const ENEMY_BULLET_WIDTH = 6;
+    const ENEMY_BULLET_HEIGHT = 14;
+
+    // Power-up properties
+    const POWERUP_WIDTH = 32;
+    const POWERUP_HEIGHT = 32;
+    const POWERUP_SPEED = 3;
+    const POWERUP_SPAWN_CHANCE = 0.001; // spawn chance per frame
+    const POWERUP_DURATION = 3500; // shotgun lasts 3.5 seconds
+
+    // Sprites
+    function drawPlayerSprite(x, y, w, h, power) {
+      let haloAlpha = 0.5 + 0.5 * Math.sin(Date.now() / 200);
+      ctx.save();
+      ctx.translate(x + w/2, y + h/2);
+      // Halo
+      ctx.beginPath();
+      ctx.arc(0, 8, w * 0.7, 0, 2 * Math.PI);
+      ctx.globalAlpha = 0.18 + 0.15 * haloAlpha;
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      // Outline
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = "#fff";
+      ctx.beginPath();
+      ctx.moveTo(-w/10, -h/2 + 8);
+      ctx.lineTo(w/10, -h/2 + 8);
+      ctx.lineTo(w/2, h/4);
+      ctx.lineTo(0, h/2);
+      ctx.lineTo(-w/2, h/4);
+      ctx.closePath();
+      ctx.stroke();
+      // Ship
+      ctx.beginPath();
+      ctx.moveTo(-w/10, -h/2 + 8);
+      ctx.lineTo(w/10, -h/2 + 8);
+      ctx.lineTo(w/2, h/4);
+      ctx.lineTo(0, h/2);
+      ctx.lineTo(-w/2, h/4);
+      ctx.closePath();
+      ctx.fillStyle = power ? "#ff0" : "#39ff14";
+      ctx.shadowColor = power ? "#ff0" : "#39ff14";
+      ctx.shadowBlur = power ? 28 : 18;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // Window
+      ctx.beginPath();
+      ctx.ellipse(0, -h/6, w/8, h/12, 0, 0, 2 * Math.PI);
+      ctx.fillStyle = "#00eaff";
+      ctx.globalAlpha = 0.8;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+
+    function drawInvaderSprite(x, y, w, h, type = 0, alive = true) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(w/34, h/24);
+      if (type === 2) {
+        ctx.beginPath();
+        ctx.moveTo(2, 24); ctx.lineTo(32, 24); ctx.lineTo(32, 18); ctx.lineTo(34, 18);
+        ctx.lineTo(34, 5); ctx.lineTo(32, 5); ctx.lineTo(32, 2); ctx.lineTo(2, 2);
+        ctx.lineTo(2, 5); ctx.lineTo(0, 5); ctx.lineTo(0, 18); ctx.lineTo(2, 18); ctx.closePath();
+        ctx.fillStyle = alive ? "#fc0" : "#444";
+        ctx.fill();
+        ctx.fillStyle = alive ? "#fff" : "#222";
+        ctx.fillRect(8, 8, 3, 3); ctx.fillRect(23, 8, 3, 3);
+      } else if (type === 1) {
+        ctx.beginPath();
+        ctx.moveTo(2,22); ctx.lineTo(32,22); ctx.lineTo(32,7); ctx.lineTo(29,3); ctx.lineTo(5,3); ctx.lineTo(2,7); ctx.closePath();
+        ctx.fillStyle = alive ? "#f6f" : "#444";
+        ctx.fill();
+        ctx.fillStyle = alive ? "#fff" : "#222";
+        ctx.fillRect(10,10,3,3); ctx.fillRect(21,10,3,3);
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(3,20); ctx.lineTo(31,20); ctx.lineTo(31,10); ctx.lineTo(27,4); ctx.lineTo(7,4); ctx.lineTo(3,10); ctx.closePath();
+        ctx.fillStyle = alive ? "#0ff" : "#444";
+        ctx.fill();
+        ctx.fillStyle = alive ? "#fff" : "#222";
+        ctx.fillRect(12,10,3,3); ctx.fillRect(19,10,3,3);
+      }
+      ctx.restore();
+    }
+
+    function drawPowerupSprite(x, y, w, h, type) {
+      ctx.save();
+      ctx.translate(x + w/2, y + h/2);
+      // Rotate for a nice effect
+      ctx.rotate((Date.now()/300) % Math.PI);
+      if(type === 'bomb') {
+        // Bomb power-up: red with explosion style
+        ctx.fillStyle = "#ff3b3b";
+        ctx.beginPath();
+        ctx.arc(0, 0, w/2-2, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-w/3, -w/3);
+        ctx.lineTo(w/3, w/3);
+        ctx.moveTo(-w/3, w/3);
+        ctx.lineTo(w/3, -w/3);
+        ctx.stroke();
+        // Draw bomb icon
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 18px Arial";
+        ctx.fillText("B", -5, 7);
+      } else {
+        // Shotgun power-up
+        ctx.fillStyle = "#ffa500";
+        ctx.beginPath();
+        ctx.arc(0, 0, w/2-2, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.strokeStyle = "#ff0";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-w/3,0); ctx.lineTo(w/3,0);
+        ctx.moveTo(0,-h/3); ctx.lineTo(0,h/3);
+        ctx.stroke();
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 18px Arial";
+        ctx.fillText("!", -5, 7);
+      }
+      ctx.restore();
+    }
+
+    // Difficulty progression and wave settings
+    let level = 1;
+    let difficulty = {
+      invaderSpeed: INVADER_SPEED_BASE,
+      invaderDrop: INVADER_DROP_BASE,
+      enemyBulletSpeed: ENEMY_BULLET_SPEED_BASE,
+      invaderRows: 5,
+      shootingChance: 0.02
+    };
+
+    // Game state
+    let leftPressed = false;
+    let rightPressed = false;
+    let spacePressed = false;
+    let canShoot = true;
+    let score = 0;
+    let gameOver = false;
+
+    // Player
+    let player = {};
+
+    // Bullets
+    let bullets = [];
+    let enemyBullets = [];
+
+    // Invaders
+    let invaders = [];
+    let invaderDirection = 1;
+
+    // Power-ups
+    let powerups = [];
+    let shotgunActive = false;
+    let shotgunTimeout = null;
+
+    // Restart button
+    const restartBtn = document.getElementById('restartBtn');
+    restartBtn.onclick = restartGame;
+
+    function resetPlayer() {
+      player = {
+        x: WIDTH / 2 - PLAYER_WIDTH / 2,
+        y: HEIGHT - PLAYER_HEIGHT - 10,
+        width: PLAYER_WIDTH,
+        height: PLAYER_HEIGHT
+      };
+    }
+
+    function setDifficultyForLevel(lvl) {
+      difficulty.invaderSpeed = INVADER_SPEED_BASE + (lvl - 1) * 0.5;
+      difficulty.invaderDrop = INVADER_DROP_BASE + (lvl - 1) * 3;
+      difficulty.enemyBulletSpeed = ENEMY_BULLET_SPEED_BASE + (lvl - 1) * 0.4;
+      // Calculate max rows based on canvas height available
+      difficulty.invaderRows = Math.min(5 + lvl - 1, Math.floor((HEIGHT - INVADER_Y_OFFSET - PLAYER_HEIGHT - 100) / INVADER_Y_SPACING));
+      difficulty.shootingChance = 0.018 + (lvl - 1) * 0.008;
+    }
+
+    function resetInvaders() {
+      invaders = [];
+      for (let row = 0; row < difficulty.invaderRows; row++) {
+        for (let col = 0; col < INVADER_COLS; col++) {
+          let type = row % 3;
+          invaders.push({
+            x: INVADER_X_OFFSET + col * INVADER_X_SPACING,
+            y: INVADER_Y_OFFSET + row * INVADER_Y_SPACING,
+            width: INVADER_WIDTH,
+            height: INVADER_HEIGHT,
+            alive: true,
+            type: type
+          });
+        }
+      }
+      invaderDirection = 1;
+    }
+
+    function resetBullets() {
+      bullets = [];
+      enemyBullets = [];
+    }
+
+    function resetPowerups() {
+      powerups = [];
+      shotgunActive = false;
+      if (shotgunTimeout) {
+        clearTimeout(shotgunTimeout);
+        shotgunTimeout = null;
+      }
+    }
+
+    function initGameVars() {
+      score = 0;
+      level = 1;
+      gameOver = false;
+      setDifficultyForLevel(level);
+      resetPlayer();
+      resetInvaders();
+      resetBullets();
+      resetPowerups();
+      restartBtn.style.display = "none";
+    }
+
+    function restartGame() {
+      initGameVars();
+      gameLoop();
+    }
+
+    function nextWave() {
+      level++;
+      setDifficultyForLevel(level);
+      resetPlayer();
+      resetInvaders();
+      resetBullets();
+      resetPowerups();
+      gameOver = false;
+      gameLoop();
+    }
+
+    // Input Handlers
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'ArrowLeft') leftPressed = true;
+      if (e.code === 'ArrowRight') rightPressed = true;
+      if (e.code === 'Space') spacePressed = true;
+      if (gameOver && e.code === 'KeyR') restartGame();
+    });
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'ArrowLeft') leftPressed = false;
+      if (e.code === 'ArrowRight') rightPressed = false;
+      if (e.code === 'Space') spacePressed = false;
+    });
+
+    function drawPlayer() {
+      drawPlayerSprite(player.x, player.y, player.width, player.height, shotgunActive);
+    }
+
+    function drawInvaders() {
+      invaders.forEach(inv => {
+        drawInvaderSprite(inv.x, inv.y, inv.width, inv.height, inv.type, inv.alive);
+      });
+    }
+
+    function drawBullets() {
+      ctx.fillStyle = '#ff0';
+      bullets.forEach(b => {
+        ctx.fillRect(b.x, b.y, BULLET_WIDTH, BULLET_HEIGHT);
+      });
+    }
+
+    function drawEnemyBullets() {
+      ctx.fillStyle = '#f00';
+      enemyBullets.forEach(b => {
+        ctx.fillRect(b.x, b.y, ENEMY_BULLET_WIDTH, ENEMY_BULLET_HEIGHT);
+      });
+    }
+
+    function drawPowerups() {
+      powerups.forEach(p => {
+        drawPowerupSprite(p.x, p.y, POWERUP_WIDTH, POWERUP_HEIGHT, p.type);
+      });
+    }
+
+    function movePlayer() {
+      if (leftPressed) player.x -= PLAYER_SPEED;
+      if (rightPressed) player.x += PLAYER_SPEED;
+      player.x = Math.max(0, Math.min(WIDTH - PLAYER_WIDTH, player.x));
+    }
+
+    function shootBullet() {
+      if (spacePressed && canShoot && !gameOver) {
+        if (shotgunActive) {
+          bullets.push({
+            x: player.x + PLAYER_WIDTH/2 - BULLET_WIDTH/2,
+            y: player.y - BULLET_HEIGHT,
+            dx: 0
+          });
+          bullets.push({
+            x: player.x + PLAYER_WIDTH/2 - BULLET_WIDTH/2,
+            y: player.y - BULLET_HEIGHT,
+            dx: -3
+          });
+          bullets.push({
+            x: player.x + PLAYER_WIDTH/2 - BULLET_WIDTH/2,
+            y: player.y - BULLET_HEIGHT,
+            dx: 3
+          });
+        } else {
+          bullets.push({
+            x: player.x + PLAYER_WIDTH/2 - BULLET_WIDTH/2,
+            y: player.y - BULLET_HEIGHT,
+            dx: 0
+          });
+        }
+        canShoot = false;
+        setTimeout(() => { canShoot = true; }, shotgunActive ? 140 : 200);
+      }
+    }
+
+    function moveBullets() {
+      bullets.forEach(b => {
+        b.y -= BULLET_SPEED;
+        b.x += b.dx || 0;
+      });
+      bullets = bullets.filter(b => b.y > -BULLET_HEIGHT && b.x > -BULLET_WIDTH && b.x < WIDTH + BULLET_WIDTH);
+    }
+
+    function moveEnemyBullets() {
+      enemyBullets.forEach(b => b.y += difficulty.enemyBulletSpeed);
+      enemyBullets = enemyBullets.filter(b => b.y < HEIGHT + ENEMY_BULLET_HEIGHT);
+    }
+
+    function moveInvaders() {
+      let aliveInvaders = invaders.filter(i => i.alive);
+      if (aliveInvaders.length === 0) return;
+      let minX = Math.min(...aliveInvaders.map(i => i.x));
+      let maxX = Math.max(...aliveInvaders.map(i => i.x + INVADER_WIDTH));
+      let edgeHit = false;
+      if (invaderDirection === 1 && maxX + difficulty.invaderSpeed >= WIDTH) edgeHit = true;
+      if (invaderDirection === -1 && minX - difficulty.invaderSpeed <= 0) edgeHit = true;
+
+      if (edgeHit) {
+        invaderDirection *= -1;
+        invaders.forEach(inv => {
+          inv.y += difficulty.invaderDrop;
+        });
+        difficulty.invaderSpeed += 0.11;
+      } else {
+        invaders.forEach(inv => {
+          inv.x += difficulty.invaderSpeed * invaderDirection;
+        });
+      }
+    }
+
+    function invaderShoot() {
+      if (Math.random() < difficulty.shootingChance) {
+        let shooters = invaders.filter(i => i.alive);
+        if (shooters.length > 0) {
+          let shooter = shooters[Math.floor(Math.random() * shooters.length)];
+          enemyBullets.push({
+            x: shooter.x + INVADER_WIDTH/2 - ENEMY_BULLET_WIDTH/2,
+            y: shooter.y + INVADER_HEIGHT,
+          });
+        }
+      }
+    }
+
+    function trySpawnPowerup() {
+      if (powerups.length === 0 && Math.random() < POWERUP_SPAWN_CHANCE) {
+        let px = Math.random() * (WIDTH - POWERUP_WIDTH);
+        // 10% chance to spawn a bomb, 90% shotgun
+        let type = (Math.random() < 0.1) ? 'bomb' : 'shotgun';
+        powerups.push({
+          x: px,
+          y: INVADER_Y_OFFSET - POWERUP_HEIGHT,
+          type: type
+        });
+      }
+    }
+
+    function movePowerups() {
+      powerups.forEach(p => {
+        p.y += POWERUP_SPEED;
+      });
+      powerups = powerups.filter(p => p.y < HEIGHT + POWERUP_HEIGHT);
+    }
+
+    function collectPowerups() {
+      powerups.forEach((p, i) => {
+        if (
+          player.x < p.x + POWERUP_WIDTH &&
+          player.x + PLAYER_WIDTH > p.x &&
+          player.y < p.y + POWERUP_HEIGHT &&
+          player.y + PLAYER_HEIGHT > p.y
+        ) {
+          if (p.type === "shotgun") {
+            activateShotgunPowerup();
+          } else if (p.type === "bomb") {
+            activateBombPowerup();
+          }
+          powerups.splice(i, 1);
+        }
+      });
+    }
+
+    function activateShotgunPowerup() {
+      shotgunActive = true;
+      if (shotgunTimeout) clearTimeout(shotgunTimeout);
+      shotgunTimeout = setTimeout(() => {
+        shotgunActive = false;
+      }, POWERUP_DURATION);
+    }
+
+    function activateBombPowerup() {
+      // Bomb effect: clear all invaders currently on screen
+      invaders.forEach(inv => inv.alive = false);
+    }
+
+    function checkBulletHits() {
+      bullets.forEach((b, bi) => {
+        invaders.forEach((inv, ii) => {
+          if (inv.alive &&
+              b.x < inv.x + inv.width &&
+              b.x + BULLET_WIDTH > inv.x &&
+              b.y < inv.y + inv.height &&
+              b.y + BULLET_HEIGHT > inv.y) {
+            inv.alive = false;
+            bullets.splice(bi, 1);
+            score += 10 * level;
+          }
+        });
+      });
+
+      enemyBullets.forEach((b, bi) => {
+        if (
+          b.x < player.x + player.width &&
+          b.x + ENEMY_BULLET_WIDTH > player.x &&
+          b.y < player.y + player.height &&
+          b.y + ENEMY_BULLET_HEIGHT > player.y
+        ) {
+          gameOver = true;
+        }
+      });
+
+      invaders.forEach(inv => {
+        if (inv.alive && inv.y + inv.height >= player.y) {
+          gameOver = true;
+        }
+      });
+    }
+
+    function drawScore() {
+      ctx.fillStyle = '#fff';
+      ctx.font = '20px Arial';
+      ctx.fillText(`Score: ${score}`, 10, 25);
+      ctx.fillText(`Wave: ${level}`, WIDTH - 120, 25);
+      if (shotgunActive) {
+        ctx.fillStyle = '#ff0';
+        ctx.font = '20px Arial';
+        ctx.fillText("SHOTGUN!", WIDTH/2 - 60, 25);
+      }
+    }
+
+    function drawGameOver() {
+      ctx.fillStyle = '#f44';
+      ctx.font = '44px Arial bold';
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', WIDTH/2, HEIGHT/2);
+      ctx.font = '24px Arial';
+      ctx.fillText('Press Restart or R', WIDTH/2, HEIGHT/2 + 50);
+      ctx.textAlign = 'start';
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+      drawPlayer();
+      drawInvaders();
+      drawBullets();
+      drawEnemyBullets();
+      drawPowerups();
+      drawScore();
+      if (gameOver) drawGameOver();
+    }
+
+    function gameLoop() {
+      if (gameOver) {
+        draw();
+        restartBtn.style.display = "block";
+        return;
+      }
+      movePlayer();
+      shootBullet();
+      moveBullets();
+      moveEnemyBullets();
+      moveInvaders();
+      invaderShoot();
+      trySpawnPowerup();
+      movePowerups();
+      collectPowerups();
+      checkBulletHits();
+      draw();
+
+      if (invaders.filter(i => i.alive).length === 0) {
+        setTimeout(nextWave, 1400); // small pause before next wave
+        return;
+      }
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Initial start
+    initGameVars();
+    gameLoop();
+  </script>
+</body>
+</html>
