@@ -16,3 +16,6 @@ Version 1 created on september 4 2025
   
   
 Have fun
+
+
+P.S- Max lives = 8 lives
